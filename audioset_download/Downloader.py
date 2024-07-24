@@ -14,6 +14,8 @@ class Downloader:
                     n_jobs: int = 1,
                     download_type: str = 'unbalanced_train',
                     copy_and_replicate: bool = True,
+                    n_splits : int = 1,
+                    split_idx: int = 0
                     ):
         """
         This method initializes the class.
@@ -23,13 +25,20 @@ class Downloader:
         :param download_type: type of download (unbalanced_train, balanced_train, eval)
         :param copy_and_replicate: if True, the audio file is copied and replicated for each label. 
                                     If False, the audio file is stored only once in the folder corresponding to the first label.
+        :param n_splits: the number of jobs being executed by other machines to split up the work
+        :param split_idx: the index of the split to download. It should be in the range [0, n_splits) (n_splits exclusive)
         """
         # Set the parameters
-        self.root_path = root_path
-        self.labels = labels
-        self.n_jobs = n_jobs
-        self.download_type = download_type
-        self.copy_and_replicate = copy_and_replicate
+        self.root_path : str = root_path
+        self.labels : list = labels
+        self.n_jobs : int = n_jobs
+        self.download_type : str = download_type
+        self.copy_and_replicate : bool = copy_and_replicate
+        self.n_splits : int = n_splits
+        self.split_idx: int = split_idx
+
+        assert isinstance(n_splits, int) and n_splits >=1, "number of splits should be an integer >=1"
+        assert isinstance(split_idx, int) and split_idx <= n_splits-1, "Split index should be in range [0, n_splits)"
 
         # Create the path
         os.makedirs(self.root_path, exist_ok=True)
@@ -61,11 +70,11 @@ class Downloader:
         :param quality: quality of the audio file (0: best, 10: worst), default is 5
         """
 
-        self.format = format
-        self.quality = quality
+        self.format : str = format
+        self.quality : int = quality
 
         # Load the metadata
-        metadata = pd.read_csv(
+        metadata : pd.DataFrame = pd.read_csv(
             f"http://storage.googleapis.com/us_audioset/youtube_corpus/v1/csv/{self.download_type}_segments.csv", 
             sep=', ', 
             skiprows=3,
@@ -80,11 +89,19 @@ class Downloader:
         metadata['positive_labels'] = metadata['positive_labels'].apply(lambda x: x.replace('"', ''))
         metadata = metadata.reset_index(drop=True)
 
-        print(f'Downloading {len(metadata)} files...')
+        sublen : int = round(len(metadata)/self.n_splits)
+
+        # don't care that much about overlap
+        bounds : tuple = (sublen * self.split_idx + 1 , sublen * (self.split_idx + 1)-1)
+        
+        print(f"Total length of dataset is {len(metadata)}")
+        print(f"Downloading from indices {bounds[0]}  to index {bounds[1]}")
+        subset : pd.DataFrame = metadata.loc[bounds[0]: bounds[1]]
+        print(f"Length of subset to download is {len(subset)}")
 
         # Download the dataset
         joblib.Parallel(n_jobs=self.n_jobs, verbose=10)(
-            joblib.delayed(self.download_file)(metadata.loc[i, 'YTID'], metadata.loc[i, 'start_seconds'], metadata.loc[i, 'end_seconds'], metadata.loc[i, 'positive_labels']) for i in range(len(metadata))
+            joblib.delayed(self.download_file)(subset.loc[i, 'YTID'], subset.loc[i, 'start_seconds'], subset.loc[i, 'end_seconds'], subset.loc[i, 'positive_labels']) for i in range(bounds[0], bounds[1])
         )
 
         print('Done.')
