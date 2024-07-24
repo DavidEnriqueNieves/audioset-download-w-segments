@@ -134,7 +134,8 @@ class Downloader:
         # Download the file using yt-dlp
         # store in the folder of the first label
         first_display_label = self.machine_to_display_mapping[positive_labels.split(',')[0]]
-        os.system(f'yt-dlp -x --audio-format {self.format} --audio-quality {self.quality} --output "{os.path.join(self.root_path, first_display_label, ytid)}_{start_seconds}-{end_seconds}.%(ext)s" --postprocessor-args "-ss {start_seconds} -to {end_seconds}" https://www.youtube.com/watch?v={ytid}')
+        # the download-archive file keeps track of files that have been downloaded
+        os.system(f'yt-dlp -x --download-archive downloaded_files_archive.txt --audio-format {self.format} --audio-quality {self.quality} --output "{os.path.join(self.root_path, first_display_label, ytid)}_{start_seconds}-{end_seconds}.%(ext)s" --postprocessor-args "-ss {start_seconds} -to {end_seconds}" https://www.youtube.com/watch?v={ytid}')
         
         if self.copy_and_replicate:
             # copy the file in the other folders
