@@ -1,6 +1,10 @@
 import os
+import pickle
 import joblib
 import pandas as pd
+from pathlib import Path
+
+print("beginning import")
 
 class Downloader:
     """
@@ -69,10 +73,12 @@ class Downloader:
         :param format: format of the audio file (vorbis, mp3, m4a, wav), default is vorbis
         :param quality: quality of the audio file (0: best, 10: worst), default is 5
         """
+        print("Downloading")
 
         self.format : str = format
         self.quality : int = quality
 
+        print("Loading CSV...")
         # Load the metadata
         metadata : pd.DataFrame = pd.read_csv(
             f"http://storage.googleapis.com/us_audioset/youtube_corpus/v1/csv/{self.download_type}_segments.csv", 
@@ -100,11 +106,38 @@ class Downloader:
         print(f"Length of subset to download is {len(subset)}")
 
         # Download the dataset
-        joblib.Parallel(n_jobs=self.n_jobs, verbose=10)(
-            joblib.delayed(self.download_file)(subset.loc[i, 'YTID'], subset.loc[i, 'start_seconds'], subset.loc[i, 'end_seconds'], subset.loc[i, 'positive_labels']) for i in range(bounds[0], bounds[1])
-        )
+        ids_to_download : list[int] = []
+        for i in range(bounds[0], bounds[1]):
+            ytid : str = subset.loc[i, 'YTID']
+            start_seconds : int = subset.loc[i, 'start_seconds']
+            end_seconds : int = subset.loc[i, 'end_seconds']
+            positive_labels : str = subset.loc[i, 'positive_labels']
+
+            display_label = self.machine_to_display_mapping[positive_labels.split(',')[0]]
+            filepath : str = f"{os.path.join(self.root_path, display_label, ytid)}_{start_seconds}-{end_seconds}.wav"
+            
+            dirpath_str : str = os.path.join(self.root_path, display_label)
+            dirpath : Path = Path(dirpath_str)
+
+            if not Path(filepath).exists():
+                if not dirpath.exists():
+                    print(f"{ytid=}")
+                    os.mkdir(dirpath)
+
+                # print(f"Simulating job for ytid {filepath}")
+                print(f"Adding {i=} to queue")
+                ids_to_download.append(i)
+
+            else:
+                print(f"Filepath {filepath} already exists!")
+                continue
+        with open("./ids_to_download.pkl", "wb") as f:
+            pickle.dump(ids_to_download, f)
 
         print('Done.')
+        joblib.Parallel(n_jobs=self.n_jobs, verbose=10)(
+            joblib.delayed(self.download_file)(ytid , start_seconds , end_seconds, positive_labels) for i in ids_to_download 
+        )
 
     def download_file(
             self, 
@@ -142,3 +175,5 @@ class Downloader:
                 display_label = self.machine_to_display_mapping[label]
                 os.system(f'cp "{os.path.join(self.root_path, first_display_label, ytid)}_{start_seconds}-{end_seconds}.wav" "{os.path.join(self.root_path, display_label, ytid)}_{start_seconds}-{end_seconds}.wav"')
         return
+
+print("Done importing")
